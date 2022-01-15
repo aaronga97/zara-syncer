@@ -1,10 +1,15 @@
 import requests
 import json
 import logging
+import threading
+import os
 from tqdm import tqdm
 from pathlib import Path
+from multiprocessing.dummy import Pool as ThreadPool
 
-OUTPUT_FILE = "db.txt"
+lock = threading.Lock()
+
+OUTPUT_FILE = "db.json"
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10; rv:33.0) Gecko/20100101 Firefox/33.0"
 HAS_SUBCATEGORIES = "hasSubcategories"
 SUBCATEGORIES = "subcategories"
@@ -91,11 +96,17 @@ def get_categories() -> list[dict]:
 def build_db() -> dict:
   categories = get_categories()
   logging.info(f"Building Zara database with {len(categories)} categories.")
-  print(f"Building Zara database with {len(categories)} categories.")
   db = {}
-  for category in tqdm(categories):
+
+  def process_category(category):
     products = get_products(category)
-    db[category.key] = products
+    with lock:
+      nonlocal db
+      db[category.key] = products
+
+  with ThreadPool(os.cpu_count()) as pool:
+    pool.map(process_category, categories)
+
   return db
 
 
@@ -104,11 +115,11 @@ def write_to_file(db: dict) -> None:
     f.write(json.dumps(db))
   
 
-def setup_logger() -> None:
-  logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=logging.DEBUG)
+def setup_logger(level=logging.DEBUG) -> None:
+  logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s', level=level)
 
 
 if __name__ == "__main__":
-  # setup_logger()  # Turn this on to debug
+  setup_logger(logging.DEBUG)  # Change ERROR to DEBUG for debugging purposes
   db = build_db()
   write_to_file(db)
